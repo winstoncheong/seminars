@@ -24,15 +24,15 @@
 <body>
 
 <h1>researchseminars.org — Architecture &amp; Outstanding Items</h1>
-<p class="meta">Repo: <code>roed314/seminars</code> (Flask app) · Fork: <code>winstoncheong/seminars</code> · Generated 2026-11-11 rev6 from source + <code>gh</code> (fork <code>master</code> = <code>integrate-10</code>, 139 passed, PRs #1010–#1017 open upstream)</p>
+<p class="meta">Repo: <code>winstoncheong/seminars</code> (Flask app, replacement for <code>roed314/seminars</code>) · Generated 2026-11-11 rev7 from source + <code>gh</code> (fork <code>master</code> = <code>d06de471</code> = integrate-10 + fix-node24-actions, 139 passed + 15 skipped, PRs #1010–#1017 open upstream)</p>
 
 <h2>1. Stack &amp; Topology</h2>
 <table>
   <tr><th>Layer</th><th>What</th><th>Where</th></tr>
   <tr><td>Web framework</td><td>Flask blueprints: <code>homepage</code>, <code>create</code>, <code>users</code> (auth), <code>api</code></td><td><code>seminars/*/main.py</code>, <code>seminars/app.py</code></td></tr>
   <tr><td>Database</td><td>Postgres via <code>psycodict.PostgresDatabase</code> (now pinned; was floating git dep)</td><td><code>seminars/__init__.py:13-17</code>, <code>requirements.txt</code> (#993)</td></tr>
-  <tr><td>Auth</td><td>Flask-Login, bcrypt, token links for speakers</td><td><code>seminars/users/pwdmanager.py</code>, <code>talk.py:119</code></td></tr>
-  <tr><td>Mail</td><td>Flask-Mail via <code>heaviside.mit.edu:465</code>, MIT sender</td><td><code>seminars/app.py:378-392</code></td></tr>
+  <tr><td>Auth</td><td>Flask-Login, bcrypt, token links for speakers</td><td><code>seminars/users/pwdmanager.py</code>, <code>seminars/talk.py:148</code></td></tr>
+  <tr><td>Mail</td><td>Flask-Mail via <code>heaviside.mit.edu:465</code>, MIT sender</td><td><code>seminars/app.py:55-60</code></td></tr>
   <tr><td>Frontend</td><td>Jinja templates + <code>seminars.js</code>, KaTeX, daterangepicker</td><td><code>seminars/templates/</code>, <code>seminars/static/</code></td></tr>
   <tr><td>Deploy</td><td>Apache + gunicorn + supervisord; branches <code>master → live → stable</code> pulled on server</td><td><code>configfiles/</code> (<code>apache.conf</code>, <code>gunicorn-config-*</code>, <code>seminars_fetch.sh</code>)</td></tr>
   <tr><td>CI / tests</td><td>GitHub Actions: <code>pytest tests/</code> + <code>ruff/pyflakes</code> + knowl YAML check (fork #992/#993/#1004). Upstream was Travis <code>pyflakes .</code> only.</td><td><code>.github/workflows/ci.yml</code>, <code>tests/</code>, <code>CONTRIBUTING.md</code></td></tr>
@@ -41,11 +41,11 @@
 <h2>2. Data Model (versioned, append-only)</h2>
 <p>Every edit inserts a new row (<code>db.*.insert_many([data])</code>); reads take the latest via
 <code>SELECT DISTINCT ON (key) … ORDER BY id DESC</code>. History is implicit, nothing is ever updated in place.
-Wrappers force <code>resort=False, reindex=False, restat=False</code> (<code>seminars/__init__.py:39-52</code>).</p>
+Wrappers force <code>resort=False, reindex=False, restat=False</code> (<code>seminars/__init__.py:39-55</code>).</p>
 <table>
   <tr><th>Table</th><th>Key</th><th>Notes</th></tr>
-  <tr><td><code>seminars</code></td><td><code>shortname</code></td><td>Series/conferences; <code>save()</code> at <code>seminar.py:297-305</code>, organizers via <code>save_organizers()</code> (delete + re-insert)</td></tr>
-  <tr><td><code>talks</code></td><td><code>(seminar_id, seminar_ctr)</code></td><td><code>save()</code> at <code>talk.py:208-219</code>; reschedule tombstones use <strong>negative</strong> <code>ctr</code> (<code>create/main.py:850</code>)</td></tr>
+  <tr><td><code>seminars</code></td><td><code>shortname</code></td><td>Series/conferences; <code>save()</code> at <code>seminars/seminar.py:322</code> (<code>save_admin:334</code>), organizers via <code>save_organizers()</code> at <code>:342</code> (delete + re-insert)</td></tr>
+  <tr><td><code>talks</code></td><td><code>(seminar_id, seminar_ctr)</code></td><td><code>save()</code> at <code>seminars/talk.py:238</code> (<code>save_admin:251</code>); reschedule tombstones use <strong>negative</strong> <code>ctr</code> (<code>seminars/create/main.py:994</code>)</td></tr>
   <tr><td><code>institutions</code>, <code>topics</code>, <code>seminar_organizers</code></td><td>various</td><td>See <code>Schema.md</code></td></tr>
   <tr><td><code>userdb.users</code></td><td><code>email</code></td><td>Subscriptions: <code>seminar_subscriptions text[]</code>, <code>talk_subscriptions json</code></td></tr>
   <tr><td>knowls</td><td>YAML</td><td>Static help text loaded at import (<code>knowls.py</code>, <code>knowls.yaml</code>)</td></tr>
@@ -68,10 +68,10 @@ Public corpus is harvestable (~25–50 paged requests); private data (emails, to
 
 <h2>3. Key Request Flows</h2>
 <h3>3.1 Edit seminar / talk (write path)</h3>
-<pre>POST /create/save/seminar/  → create/main.py:435 save_seminar()
-POST /create/save/talk/     → create/main.py:828 save_talk()
-POST /create/save/schedule/ → create/main.py:1075 save_seminar_schedule()  (N unbatched inserts!)
-POST /api/0/save/series|talk/ → api/main.py:340,462  (display=False gate + review queue)</pre>
+<pre>POST /create/save/seminar/  → seminars/create/main.py:524 save_seminar()
+POST /create/save/talk/     → seminars/create/main.py:954 save_talk()
+POST /create/save/schedule/ → seminars/create/main.py:1220 save_seminar_schedule()  (N unbatched inserts!)
+POST /api/0/save/series|talk/ → seminars/api/main.py:532/534,659/661  (display=False gate + review queue)</pre>
 <p>Cost per save: 3–6 versioned reads (<code>DISTINCT ON</code>), up to 10 sequential <code>users.lookup</code> (organizers), <code>talks_max()</code> scan, <code>email_validator</code>. No index rebuild, no mail, no cache purge — writes are cheap; bulk schedule-save is N commits.</p>
 
 <h3>3.2 Read / browse / search</h3>
@@ -81,16 +81,19 @@ GET /api/0/search/series|talks  machine API (operator/dict filters; #984/#986 50
 GET /api/0/lookup/series|talk   single-record fetch</pre>
 
 <h3>3.3 Calendar export (ICS — on-demand, uncached)</h3>
-<pre>GET /seminar/&lt;short&gt;/ics   homepage/main.py:941  (per-series, already filters ctr&gt;0)
-GET /talk/&lt;id&gt;/&lt;ctr&gt;/ics  homepage/main.py:956  (single talk)
-GET /ics/&lt;token&gt;             users/main.py:617      (favorites → user.ics_talks; ctr&lt;0 tombstones filtered by #989)</pre>
+<pre>GET /seminar/&lt;short&gt;/ics   seminars/homepage/main.py:1061-1062  (per-series, already filters ctr&gt;0 via WebSeminar.talks() at seminars/seminar.py:617)
+GET /talk/&lt;id&gt;/&lt;ctr&gt;/ics  seminars/homepage/main.py:1090-1091  (single talk)
+GET /seminar/&lt;short&gt;/rss   seminars/homepage/main.py:1076-1077  (per-series RSS 2.0, #1005)
+GET /manage/export/ics       seminars/create/bulk_export.py:278-280  (organizer bulk ICS/ZIP export, #1015)
+GET /ics/&lt;token&gt;             seminars/users/main.py:637-638      (favorites → user.ics_talks; ctr&lt;0 tombstones filtered by #989)</pre>
+<p>Edit concurrency (optimistic, #1016): forms carry hidden <code>edited_at</code>; mismatch → HTTP 409 re-render (<code>seminars/create/main.py:540-550,823-836,967-976</code>); API reports <code>version_required/stale_edit</code> (<code>seminars/api/main.py</code>).</p>
 <p>Generation: <code>utils.py ics_file()</code> + <code>talk.py event()</code> → <code>DTSTAMP=edited_at</code> (fallback <code>start_time</code>), stable <code>UID {id}/{ctr}@topdomain</code>, <code>SEQUENCE:0</code> + <code>LAST-MODIFIED</code>, <code>METHOD:PUBLISH</code>, <code>text/calendar</code> inline, <code>ETag/Last-Modified</code> with <code>304</code> (<code>fix-feed-hardening</code>, PR #1012).
 Favorites query does a full
 <code>all_seminars()</code> scan + per-subscription <code>$or</code> + Python filter/sort
-(<code>pwdmanager.py:466-484</code>). External clients poll on their schedule (Google ~12–24h, Outlook 24h+, no SLA);
+(<code>seminars/users/pwdmanager.py:470-498</code>). External clients poll on their schedule (Google ~12–24h, Outlook 24h+, no SLA);
 Google drops feeds over ~1MB/~1111 events (#777 — documented #991, feeds now stable/small; pull-only by design).</p>
 
-<h2>4. Outstanding Items (rev6 — fork <code>master</code> = <code>integrate-10</code>, doc list done, PRs #1010–#1017 open)</h2>
+<h2>4. Outstanding Items (rev7 — fork <code>master</code> = <code>d06de471</code> = integrate-10 + fix-node24-actions, doc list done, PRs #1010–#1017 open)</h2>
 
 <h3>4.1 Our PRs / issues (winstoncheong → upstream, all OPEN upstream)</h3>
 <table>
@@ -148,21 +151,21 @@ Google drops feeds over ~1MB/~1111 events (#777 — documented #991, feeds now s
 <ul>
   <li><span class="tag done">DONE</span> <code>CONTRIBUTING.md</code>, PR/issue templates, CI required checks (#992); fixes now require <code>Fixes/Closes</code>.</li>
   <li><span class="tag done">DONE</span> Pinned <code>requirements.txt</code> + staging validation (#993); ruff gate + dep vetting (#1009). Floating <code>psycodict@git</code> was the cause of #982/#980.</li>
-  <li>Still open: ~90 upstream issues oldest from 2020; triage discipline (see <code>forgotten-to-close.md</code>: #961, #964, #777, #886, #116 — tracked in #988).</li>
+  <li>Still open: ~90 upstream issues oldest from 2020; triage discipline (see #988 meta: #961, #964, #777, #886, #116).</li>
   <li>ICS is pull-only: poll interval (Google/Apple/Outlook) is <strong>not fixable from this codebase</strong>. Mitigation = small/stable feeds (#989 + #991 + #1012) + different model: <strong>event-driven notifications</strong> (prototype #1002 + opt-in digest/preview #1017, no auto-send; parent #82) keeping ICS as fallback.</li>
 </ul>
 
-<h3>4.4 Suggested next work (fork) — rev6 status (doc done + #82 digest; PRs open)</h3>
+<h3>4.4 Suggested next work (fork) — rev7 status (doc done + #82 digest + node24 CI fixes; PRs open)</h3>
 <ol>
   <li><span class="tag done">DONE</span> Email-on-edit prototype (#1002) + opt-in digest/preview/capped send + changed badge (#1017; relates #82, no auto-send).</li>
   <li><span class="tag done">DONE</span> Feed hardening via <code>fix-feed-hardening</code> (PR <a href="https://github.com/roed314/seminars/pull/1012">#1012</a>).</li>
   <li><span class="tag done">DONE</span> Bulk-export endpoint via <code>fix-910-bulk</code> (PR <a href="https://github.com/roed314/seminars/pull/1015">#1015</a>).</li>
   <li><span class="tag done">DONE</span> Pin deps + minimal pytest job (#993 + #992 + #1004).</li>
-  <li><span class="tag done">DONE</span> Fork <code>master</code> = <code>integrate-10</code>: rev5 content + <code>fix-82-mail</code>, 139 passed, 15 skipped, ruff clean.</li>
+  <li><span class="tag done">DONE</span> Fork <code>master</code> = <code>d06de471</code>: integrate-10 content + <code>fix-82-mail</code> + <code>fix-node24-actions</code> (checkout/setup-python v6, full-requirements checks job), 139 passed, 15 skipped, ruff clean.</li>
   <li><span class="tag open">TRACKING ONLY</span> #988 meta + #777 by-design cap + #82 epic (digest done, auto-send intentionally out of scope).</li>
 </ol>
 
-<footer>Contact: @winstoncheong · winstonc@ksu.edu · Fork <code>master</code> = <code>integrate-10</code> · Upstream PRs #1010–#1017 open</footer>
+<footer>Contact: @winstoncheong · winstonc@ksu.edu · Fork <code>master</code> = <code>d06de471</code> · Upstream PRs #1010–#1017 open</footer>
 
 </body>
 </html>
